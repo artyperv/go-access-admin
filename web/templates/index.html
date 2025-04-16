@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Access Admin</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body class="section">
+    <div class="container">
+
+        <div class="h-stack" style="justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <h1 class="title">Access Admin</h1>
+
+            <div class="h-stack" style="align-items: center; gap: 0.75rem;">
+                <label>Access file:</label>
+                <select id="htpasswd-select">
+                    {{range .HtpasswdPaths}}
+                    <option value="{{.Name}}" {{if eq .Name $.DefaultName}}selected{{end}}>
+                        {{.Name}}
+                    </option>
+                    {{end}}
+                </select>
+            </div>
+        </div>
+
+        <form method="POST" action="/access">
+            <div class="h-stack" style="align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <input class="input" type="text" name="username" placeholder="Username" required>
+                <input class="input" type="text" name="password" placeholder="Password">
+                <select name="duration_minutes">
+                    <option value="60">1 hour</option>
+                    <option value="1440">1 day</option>
+                    <option value="10080">1 week</option>
+                </select>
+                <button class="is-primary" type="submit">Add</button>
+            </div>
+        </form>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Password</th>
+                    <th>Expires At</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="user-table"></tbody>
+        </table>
+    </div>
+    <script>
+        function copyLink(id, link) {
+            navigator.clipboard.writeText(link).then(() => {
+                const btn = document.getElementById(`copy-${id}`);
+                if (!btn) return;
+
+                const original = btn.textContent;
+                btn.textContent = "✅";
+
+                setTimeout(() => {
+                    btn.textContent = original;
+                }, 3000);
+            });
+        }
+
+        function getHtpasswdName() {
+            return document.getElementById("htpasswd-select").value;
+        }
+
+        function formatDate(exp) {
+            const date = new Date(exp);
+            const now = new Date();
+            const tomorrow = new Date();
+            tomorrow.setDate(now.getDate() + 1);
+
+            const sameDay = (a, b) => a.getFullYear() === b.getFullYear() &&
+                a.getMonth() === b.getMonth() &&
+                a.getDate() === b.getDate();
+
+            if (sameDay(date, now)) return "сегодня";
+            if (sameDay(date, tomorrow)) return "завтра";
+
+            return date.toLocaleDateString("ru-RU"); // формат: 04.06.2025
+        }
+
+        async function loadUsers() {
+            const res = await fetch(`/access?htpasswd_name=${encodeURIComponent(getHtpasswdName())}`);
+            const users = await res.json();
+
+            const table = document.getElementById("user-table");
+            table.innerHTML = "";
+
+            users.forEach(user => {
+                const tr = document.createElement("tr");
+
+                tr.innerHTML = `
+                <td>${user.username}</td>
+                <td>
+                    <div class="password-cell">
+                        <span id="pw-${user.id}" class="masked" onclick="navigator.clipboard.writeText('${user.password}')">********</span>
+                        <button class="is-small" id="eye-${user.id}" onclick="togglePassword(${user.id}, '${user.password}')">👁️</button>
+                    </div>
+                </td>
+                <td>${user.is_admin ? '<span class="admin-label">admin (∞)</span>' : formatDate(user.expires_at)}</td>
+                <td>${user.is_admin ? '' : `
+                    <div class="action-buttons">
+                        <button class="is-small" id="copy-${user.id}" onclick="copyLink(${user.id}, '${user.access_link}')">📋</button>
+                        <button class="is-danger is-small" onclick="deleteUser(${user.id})">🗑️</button>
+                    </div>
+                `}</td>
+            `;
+
+                table.appendChild(tr);
+            });
+        }
+
+        document.getElementById("htpasswd-select").addEventListener("change", loadUsers);
+
+        document.getElementById("htpasswd-select").addEventListener("change", () => {
+            // Обновляем URL без перезагрузки страницы
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set("htpasswd_name", getHtpasswdName());
+            window.history.replaceState({}, "", newUrl);
+        });
+
+        function togglePassword(id, password) {
+            const pwEl = document.getElementById(`pw-${id}`);
+            const eyeBtn = document.getElementById(`eye-${id}`);
+
+            const isMasked = pwEl.classList.contains("masked");
+
+            if (isMasked) {
+                pwEl.textContent = password;
+                pwEl.classList.remove("masked");
+                eyeBtn.textContent = "🙈";
+            } else {
+                pwEl.textContent = "********";
+                pwEl.classList.add("masked");
+                eyeBtn.textContent = "👁️";
+            }
+        }
+
+        function generatePassword(length = 10) {
+            const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let password = '';
+            for (let i = 0; i < length; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return password;
+        }
+
+        async function addUser(e) {
+            e.preventDefault();
+
+            const username = e.target.username.value.trim();
+            let password = e.target.password.value;
+            const duration = e.target.duration_minutes.value;
+
+            if (!password) {
+                password = generatePassword();
+                e.target.password.value = password;
+            }
+
+            const res = await fetch("/access", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    duration_minutes: parseInt(duration),
+                    htpasswd_name: getHtpasswdName()
+                })
+            });
+
+            if (res.ok) {
+                await loadUsers();
+                e.target.reset();
+            } else {
+                alert("Failed to add user");
+            }
+        }
+
+        async function deleteUser(id) {
+            const confirmed = confirm("Are you sure?");
+            if (!confirmed) return;
+
+            const res = await fetch(`/access/${id}`, { method: "DELETE" });
+            if (res.ok) {
+                await loadUsers();
+            } else {
+                alert("Failed to delete user");
+            }
+        }
+
+        document.querySelector("form").addEventListener("submit", addUser);
+
+        loadUsers();
+    </script>
+</body>
+
+</html>

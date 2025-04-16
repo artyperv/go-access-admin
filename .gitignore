@@ -1,0 +1,3 @@
+.htpasswd
+internal/config/config.yaml
+accesses.db
