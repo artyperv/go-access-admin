@@ -1,0 +1,17 @@
+app:
+  debug: false
+  sync_htpasswd: true  # deletes all records from .htpasswd and writes db users in it on startup
+  clean_accesses_interval: 1  # in minutes
+
+htpasswd_paths:
+  - name: "example_service"
+    path: "/path/to/.htpasswd"
+    url_template: "https://{user}:{password}@site.ru/protected"
+    admins:
+      - username: "admin"
+        password: "secure_password"
+
+# Global admins
+admins:
+  - username: "admin"
+    password: "secure_password"

@@ -8,7 +8,7 @@ import (
 
 type AppSettings struct {
 	Debug                 bool `yaml:"debug"`
-	SyncHtpasswd          bool `yaml:"sync_httpasswd"`
+	SyncHtpasswd          bool `yaml:"sync_htpasswd"`
 	CleanAccessesInterval int  `yaml:"clean_accesses_interval"`
 }
 
